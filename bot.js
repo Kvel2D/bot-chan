@@ -28,14 +28,17 @@ const message_count = 60000;
 const boundary_message = 366686586802536459; 
 // Update attendance every 12 hours
 const update_attendance_interval = 12 * 60 * 60 * 1000;
+const update_raidstats_interval = 20 * 60 * 1000;
 
 
 // in messages
 var ramble_msg_cd_min = 15;
 var ramble_msg_cd_max = 50;
 // in milliseconds
-var ramble_time_cd_min = 15 * 60 * 1000;
-var ramble_time_cd_max = 30 * 60 * 1000;
+var ramble_time_cd_min = 30 * 60 * 1000;
+var ramble_time_cd_max = 60 * 60 * 1000;
+var respond_time_cd_min = 1 * 60 * 1000;
+var respond_time_cd_max = 2 * 60 * 1000;
 
 const intercation_cap_reset_interval = 5 * 60 * 1000;
 const interaction_max = 3;
@@ -47,17 +50,41 @@ const reminder_count_max = 5;
 
 var ramble_msg_cd = random_int(ramble_msg_cd_min, ramble_msg_cd_max);
 var ramble_time_cd = false;
+var respond_time_cd = false;
 var corpus_was_read = false;
 var just_said_goodnight = false;
 
+
+process.on('uncaughtException', function (err) {
+	log_error(err);
+});
+
+function log_error(error) {
+	fs.appendFile('error_log.txt', error, function (err) {
+		if (err) log_error(err);
+		console.log('Saved error');
+	});
+}
+
+function send_dm(user, text) {
+	try {
+		user.send(text);
+	} catch(err) { 
+		log_error("Error sending dm \"" + text + "\" to user: " + err); 
+	}
+}
+
 function reset_ramble_time_cd() {
 	ramble_time_cd = false;
+}
+function reset_respond_time_cd() {
+	respond_time_cd = false;
 }
 function reset_goodnight() {
 	just_said_goodnight = false;
 }
 function send_reminder(user, text) {
-	user.send(text);
+	send_dm(user, text);
 }
 
 var interaction_caps = {};
@@ -74,61 +101,6 @@ const goodnight_strings = [
 "See you ", 
 ];
 
-var clannad_to_sos = {
-	"Tomoya": "Caber",
-	"Kyou": "Ratvendor",
-	"Nagisa": "Nani",
-	"Fuuko": "Eternia",
-	"Tomoyo": "Bai",
-	"Ryou": "Chizen",
-	"Akio": "Nutty",
-	"Sanae": "Monmusugirl",
-	"Kappei": "Rafe",
-	"Kouko": "Fulch",
-	"Toshio": "Struggle",
-	"Yukine": "Kazmura",
-	"Misae": "Beleta",
-	"Mei": "Lari",
-	"Youhei": "Lymetel",
-	"Yuusuke": "Kvel",
-	"Nishina": "Pappen",
-	"Kotomi": "Bot-chan",
-	"Ichinose": "Ayane",
-};
-
-function extract_kotomis_lines() {
-	fs.readFile('clannad_script.txt', 'utf8', (err, corpus_string) => {
-		if (err) {
-			console.log('Error loading corpus file: ' + err);
-			return;
-		}
-		corpus = corpus_string.split('\n');
-
-		var kotomi_speaking = false;
-		var kotomi_lines = [];
-		for (var i = 0; i < corpus.length; i++) {
-			if (corpus[i].match(":") && !corpus[i].match("Kotomi")) {
-				kotomi_speaking = false;
-			}
-			if (kotomi_speaking && corpus[i].length > 5) {
-				for (var key in clannad_to_sos) {
-					corpus[i] = corpus[i].replace(key, clannad_to_sos[key]);
-				}
-				kotomi_lines.push(corpus[i]);
-			}
-			if (corpus[i].match("Kotomi:")) {
-				kotomi_speaking = true;
-			}
-		}
-		fs.writeFile('corpus-kotomi.txt', kotomi_lines.join('\n'), (err) => {
-			if (err) throw err;
-			console.log('Exported corpus');
-		});
-	});
-}
-// extract_kotomis_lines();
-
-
 client.on("ready", () => {
 	sos = client.channels.get(sos_id);
 	test = client.channels.get(test_id);
@@ -137,8 +109,9 @@ client.on("ready", () => {
 
 	import_corpus(true);
 	update_attendance();
-	get_raidstats();
+	update_raidstats();
 });
+
 
 client.on("message", (message) => {
 	if(message.author.bot) return;
@@ -154,7 +127,7 @@ client.on("message", (message) => {
 		} else if (content.startsWith("!export corpus")) {
 			console.log("Exporting corpus");
 			fs.writeFile('corpus.txt', corpus.join('\n'), (err) => {
-				if (err) throw err;
+				if (err) log_error(err);
 				console.log('Exported corpus');
 			});
 		} else if (content.startsWith("!import corpus")) {
@@ -170,13 +143,21 @@ client.on("message", (message) => {
 			ramble_msg_cd_max *= 2;
 			ramble_time_cd_min *= 2;
 			ramble_time_cd_max *= 2;
-			test.send("Rambling less, MSG: min = " + ramble_msg_cd_min + " max = " + ramble_msg_cd_max + "TIME: min = " + ramble_time_cd_min + " max = " + ramble_time_cd_max);
+			test.send("Rambling less, MSG: min = " + ramble_msg_cd_min + " max = " + ramble_msg_cd_max + " TIME: min = " + ramble_time_cd_min + " max = " + ramble_time_cd_max);
 		} else if (content.startsWith("!ramble more")) {
 			ramble_msg_cd_min /= 2;
 			ramble_msg_cd_max /= 2;
 			ramble_time_cd_min /= 2;
 			ramble_time_cd_max /= 2;
-			test.send("Rambling more, MSG: min = " + ramble_msg_cd_min + " max = " + ramble_msg_cd_max + "TIME: min = " + ramble_time_cd_min + " max = " + ramble_time_cd_max);
+			test.send("Rambling more, MSG: min = " + ramble_msg_cd_min + " max = " + ramble_msg_cd_max + " TIME: min = " + ramble_time_cd_min + " max = " + ramble_time_cd_max);
+		} else if (content.startsWith("!respond less")) {
+			respond_time_cd_min *= 2;
+			respond_time_cd_max *= 2;
+			test.send("Responding less, TIME: min = " + respond_time_cd_min + " max = " + respond_time_cd_max);
+		} else if (content.startsWith("!respond more")) {
+			respond_time_cd_min /= 2;
+			respond_time_cd_max /= 2;
+			test.send("Responding more, TIME: min = " + respond_time_cd_min + " max = " + respond_time_cd_max);
 		}
 	}
 
@@ -187,7 +168,7 @@ client.on("message", (message) => {
 	// User commands
 	function command_used_in_dm() {
 		if (message.channel.id == sos.id || message.channel.id == test.id) {
-			message.author.send("To prevent flooding, this command can be used only in DM with me.");
+			send_dm(message.author, "To prevent flooding, this command can be used only in DM with me.");
 			return false;
 		} else {
 			return true;
@@ -199,39 +180,39 @@ client.on("message", (message) => {
 			if (message_split.length >= 3 && !isNaN(message_split[1])) {
 				var time = message_split[1];
 				if (time > 1440) {
-					message.author.send("This is too long, try something lower than 24 hours.");
+					send_dm(message.author, "This is too long, try something lower than 24 hours.");
 				} else {
 
 					if (!(message.author.id in reminder_counts)) {
 						reminder_counts[message.author.id] = 1;
 					}
 					if (reminder_counts[message.author.id] >= reminder_count_max) {
-						message.author.send("You went over the active reminders cap, wait until one of them expires before making a new one.");
+						send_dm(message.author, "You went over the active reminders cap, wait until one of them expires before making a new one.");
 					} else {
 						reminder_counts[message.author.id] = reminder_counts[message.author.id] + 1;
 
 						var text = content.replace(message_split[0] + " " + message_split[1] + " ", "");
 						setTimeout(send_reminder, time * 60 * 1000, message.author, text);
-						message.author.send("Will remind you in " + time + " minutes");
+						send_dm(message.author, "Will remind you in " + time + " minutes");
 					}
 				}
 			} else {
-				message.author.send("!remindme (time in minutes) (message text)");
+				send_dm(message.author, "!remindme (time in minutes) (message text)");
 			}
 		}
 	} else if (content.startsWith("!attendance")) {
 		if (command_used_in_dm()) {
 			var name = content.replace("!attendance ", "");
 			if (!(name.toLowerCase() in attendance)) {
-				message.author.send("No such name (" + name + ") exists in the attendance sheet.");
+				send_dm(message.author, "No such name (" + name + ") exists in the attendance sheet.");
 			} else {
-				message.author.send(name + " has " + attendance[name.toLowerCase()] + "% attendance and has attended " + total_days[name.toLowerCase()] + " days total.");
+				send_dm(message.author, name + " has " + attendance[name.toLowerCase()] + "% attendance and has attended " + total_days[name.toLowerCase()] + " days total.");
 			}
 		}
 	}
 
 
-	var message_counts_to_cap = true;
+	var message_counts_to_cap = false;
 	// Skip messages when author is over cap
 	if (!(message.author.id in interaction_caps)) {
 		interaction_caps[message.author.id] = 0;
@@ -242,53 +223,92 @@ client.on("message", (message) => {
 	}
 
 	// Random interactions
-	if (!just_said_goodnight 
-		&& content.match(/(goodnight|good night|gonna sleep|going to sleep)/i))
-	{
-		just_said_goodnight = true;
-		var k = random_int(0, goodnight_strings.length - 1);
-		message.channel.send(goodnight_strings[k] + message.author.username);
-		setTimeout(reset_goodnight, 60000);
-	} else if (content.match(/smile/i) && message.author.username.match("Smiles")) {
-		message.channel.send("*smiles at " + message.author.username + "*");
-	} else if (content.match(/i love you, bot-chan!/i) || content.match(/i love you bot-chan!/i)) {
-		message.channel.send("I love you too!");
-	} else if (content.match(/bot-chan|botchan/i)) {
-		if (content.match(/help|command/i)) {
-			message.author.send("commands:\n!attendance (name)\n!remindme (time in minutes) (text)");
-		} else if (content.match("kissu")) {
-			message.channel.send("*gives " + message.author.username + " a kissu*");
-		} else if (content.match(" ears")) {
-			message.channel.send("*massages " + message.author.username + "'s ears*");
-		} else if (content.match("morning")) {
-			message.channel.send("Hi, " + message.author.username);
+	if (message.channel.id == sos_id || message.channel.id == test_id) {
+		if (!just_said_goodnight 
+			&& content.match(/(goodnight|good night|gonna sleep|going to sleep)/i))
+		{
+			console.log(1);
+			just_said_goodnight = true;
+			var k = random_int(0, goodnight_strings.length - 1);
+			message.channel.send(goodnight_strings[k] + message.author.username);
+			setTimeout(reset_goodnight, 60000);
+		} else if (content.match(/smile/i) && message.author.username.match("Smiles")) {
+			console.log(2);
+			message.channel.send("*smiles at " + message.author.username + "*");
+			
+			message_counts_to_cap = true;
+		} else if (content.match(/i love you, bot-chan!/i) || content.match(/i love you bot-chan!/i)) {
+			console.log(3);
+			message.channel.send("I love you too!");
+
+			message_counts_to_cap = true;
+		} else if (content.match(/bot-chan|botchan/i)) {
+			console.log(4);
+			if (content.match(/help|command/i)) {
+				send_dm(message.author, "commands:\n!attendance (name)\n!remindme (time in minutes) (text)");
+			} else if (content.match("kissu")) {
+				message.channel.send("*gives " + message.author.username + " a kissu*");
+			} else if (content.match(" ears")) {
+				message.channel.send("*massages " + message.author.username + "'s ears*");
+			} else if (content.match("morning")) {
+				message.channel.send("Hi, " + message.author.username);
+			}
+
+			message_counts_to_cap = true;
+		} else if (content.startsWith("!roll")) {
+			console.log(5);
+			var range = content.replace("!roll", "");
+			var result = random_int(0, 100);
+			if (range.length != 0) {
+				var divider = range.indexOf('-');
+				var min = range.substring(0, divider);
+				var max = range.substring(divider + 1);
+				if (!isNaN(min) && !isNaN(max)) {
+					range = content.replace("!roll", "");
+					result = random_int(parseInt(min), parseInt(max));
+				} else {
+					range = "1-100";
+				}
+			} else {
+				range = "1-100";
+			}
+			message.channel.send(message.author.username + " rolls " + result + " (" + range + ")");
+
+			message_counts_to_cap = true;
 		}
-	} else {
-		message_counts_to_cap = false;
+	}
 
-		if (corpus_was_read && message.channel.id == sos.id) {
-			// Ramble when time_cd is over AND either msg_cd == 0 OR somebody metioned bot-chan
-			// The goal is to ramble once every x msg and respond to mentions, but ultimately be limited by some time
-			// So that the bot is active during slow times but doesn't ramble too much when chat is very active
-			if (!ramble_time_cd && (ramble_msg_cd < 0 || content.match(/bot-chan|botchan/i))) {
-				ramble_msg_cd = random_int(ramble_msg_cd_min, ramble_msg_cd_max);
-				ramble_time_cd = true;
-				setTimeout(reset_ramble_time_cd, random_int(ramble_time_cd_min, ramble_time_cd_max));
 
+	var delay_min = 30 * 1000;
+	var delay_max = 2 * 60 * 1000;
+
+	if (corpus_was_read && message.channel.id == sos_id) {
+		ramble_msg_cd--;
+
+		if (!respond_time_cd && content.match(/bot-chan|botchan/i)) {
+			respond_time_cd = true;
+			setTimeout(reset_respond_time_cd, random_int(respond_time_cd_min, respond_time_cd_max));
+
+			setTimeout(send_ramble, random_int(delay_min, delay_max));
+		} else if (!ramble_time_cd) {
+			ramble_msg_cd = random_int(ramble_msg_cd_min, ramble_msg_cd_max);
+			ramble_time_cd = true;
+			setTimeout(reset_ramble_time_cd, random_int(ramble_time_cd_min, ramble_time_cd_max));
+
+			
+
+			if (images.length != 0 && links.length != 0) {
 				if (random_int(1, 100) < 90) {
-					setTimeout(delayed_response, random_int(20000, 30000));
-					if (random_int(1, 3) == 1) {
-						sos.channel.send(random_link());
-					} else {
-						sos.channel.send(random_image());
-					} 
+					setTimeout(send_ramble, random_int(delay_min, delay_max));
 				} else {
 					if (random_int(1, 3) <= 2) {
-						sos.channel.send(random_image());
+						setTimeout(send_random_image, random_int(delay_min, delay_max));
 					} else {
-						sos.channel.send(random_link());
+						setTimeout(send_random_link, random_int(delay_min, delay_max));
 					} 
 				}
+			} else {
+				setTimeout(send_ramble, random_int(delay_min, delay_max));
 			}
 		}
 	}
@@ -305,8 +325,18 @@ client.on("message", (message) => {
 	}
 });
 
-function delayed_response() {
+function send_ramble() {
 	sos.send(random_many_words());
+}
+
+function send_random_link() {
+	var k = random_int(0, links.length - 1);
+	return links[k];
+}
+
+function send_random_image() {
+	var k = random_int(0, images.length - 1);
+	return images[k];
 }
 
 function import_corpus(read_too = false) {
@@ -343,17 +373,6 @@ function random_int(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-
-function random_link() {
-	var k = random_int(0, links.length - 1);
-	return links[k];
-}
-
-function random_image() {
-	var k = random_int(0, images.length - 1);
-	return images[k];
-}
-
 function random_word(struct) {
 	var total = struct.word_counts_incremented[struct.word_counts_incremented.length - 1];
 	var k = random_int(0, total);
@@ -378,7 +397,7 @@ function random_many_words() {
 	var split_pair = first_pair.split(' ');
 	var prev_prev = split_pair[0];
 	var prev = split_pair[1];
-	var k = random_int(10, 50);
+	var k = random_int(10, 40);
 	while (k > 0) {
 		var pair = prev_prev + " " + prev;
 		var next = "";
@@ -569,12 +588,8 @@ fs.readFile('welcome message.txt',  'utf8', (err, content) => {
 });
 
 
-
 client.on('guildMemberAdd', (member) => {
-	if (member !== undefined) {
-		console.log("guildMemberAdd " + member.nickname);
-		member.send(welcome_message);
-	}
+	send_dm(member, welcome_message);
 })
 
 
@@ -610,6 +625,7 @@ var TOKEN_PATH = TOKEN_DIR + 'sheets.googleapis.com-nodejs-quickstart.json';
 function update_attendance() {
 	fs.readFile('client_secret.json', function processClientSecrets(err, content) {
 		if (err) {
+			log_error('Error loading client secret file: ' + err);
 			console.log('Error loading client secret file: ' + err);
 			return;
 		}
@@ -635,6 +651,7 @@ function authorize(credentials, callback) {
   	// Check if we have previously stored a token.
   	fs.readFile(TOKEN_PATH, function(err, token) {
   		if (err) {
+  			log_error(err);
   			getNewToken(oauth2Client, callback);
   		} else {
   			oauth2Client.credentials = JSON.parse(token);
@@ -659,8 +676,11 @@ function getNewToken(oauth2Client, callback) {
 	});
 	rl.question('Enter the code from that page here: ', function(code) {
 		rl.close();
+		console.log("Code is " + code);
 		oauth2Client.getToken(code, function(err, token) {
+			console.log("getting token");
 			if (err) {
+				log_error('Error while trying to retrieve access token' + err);
 				console.log('Error while trying to retrieve access token', err);
 				return;
 			}
@@ -679,7 +699,7 @@ function storeToken(token) {
 		fs.mkdirSync(TOKEN_DIR);
 	} catch (err) {
 		if (err.code != 'EEXIST') {
-			throw err;
+			log_error(err);
 		}
 	}
 	fs.writeFile(TOKEN_PATH, JSON.stringify(token));
@@ -695,6 +715,7 @@ function retrieve_attendance(auth) {
 	}, function(err, response) {
 		if (err) {
 			console.log('The API returned an error: ' + err);
+			log_error('The API returned an error: ' + err);
 			return;
 		}
 		var rows = response.values;
@@ -734,7 +755,7 @@ var names = [];
 var dates = [];
 
 // Do this every hour
-function get_raidstats() {
+function update_raidstats() {
 	console.log("Getting raidstats");
 	http.get(realmplayers_http_get_options, function (response) {
 		console.log("Got response: " + response.statusCode);
@@ -747,7 +768,7 @@ function get_raidstats() {
 	}).on('error', function (e) {
 		console.log("Got error: " + e.message);
 	});
-	setTimeout(get_raidstats, 60 * 60 * 1000);
+	setTimeout(update_raidstats, update_raidstats_interval);
 }
 
 
@@ -799,14 +820,18 @@ function process_string() {
 				}
 
 				fs.writeFile('reported_raids.txt', reported_raids.join('\n'), (err) => {
-					if (err) throw err;
+					if (err) log_error(err);
 					console.log('Wrote reported_raids.txt');
 				});
 
-				console.log("New raids found:");
-				for (var i = 0; i < new_raids.length; i++) {
-					// Send message to raid_stats channel
-					raidstats.send(new_raids[i]);
+				if (new_raids.length == 0) {
+					console.log("No new raids found:");
+				} else {
+					console.log("New raids found:");
+					for (var i = 0; i < new_raids.length; i++) {
+						// Send message to raid_stats channel
+						raidstats.send(new_raids[i]);
+					}
 				}
 			});
 		} else {
