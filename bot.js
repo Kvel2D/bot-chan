@@ -32,11 +32,11 @@ const update_raidstats_interval = 20 * 60 * 1000;
 
 
 // in messages
-var ramble_msg_cd_min = 15;
-var ramble_msg_cd_max = 50;
+var ramble_msg_cd_min = 100;
+var ramble_msg_cd_max = 200;
 // in milliseconds
-var ramble_time_cd_min = 30 * 60 * 1000;
-var ramble_time_cd_max = 60 * 60 * 1000;
+var ramble_time_cd_min = 6 * 60 * 60 * 1000;
+var ramble_time_cd_max = 12 * 60 * 60 * 1000;
 var respond_time_cd_min = 1 * 60 * 1000;
 var respond_time_cd_max = 2 * 60 * 1000;
 
@@ -289,7 +289,7 @@ client.on("message", (message) => {
 			respond_time_cd = true;
 			setTimeout(reset_respond_time_cd, random_int(respond_time_cd_min, respond_time_cd_max));
 
-			setTimeout(send_ramble, random_int(delay_min, delay_max));
+			setTimeout(send_ramble, random_int(10 * 1000, 20 * 1000));
 		} else if (!ramble_time_cd) {
 			ramble_msg_cd = random_int(ramble_msg_cd_min, ramble_msg_cd_max);
 			ramble_time_cd = true;
@@ -745,7 +745,7 @@ function retrieve_attendance(auth) {
 var realmplayers_http_get_options = {
 	host: 'www.realmplayers.com',
 	port: 80,
-	path: '/RaidStats/RaidList.aspx?realm=Ely&guild=SOS%20Brigade'
+	path: '/RaidStats/RaidList.aspx?realm=LB&guild=SOS%20Brigade'
 };
 
 
